@@ -1,0 +1,313 @@
+# Aturan Desain & Frontend RuangKerja
+
+## 1. Stack & Konvensi
+- Framework: Next.js App Router dengan TypeScript.
+- Gunakan struktur `app/` untuk routing.
+- Gunakan komponen modular di folder `components/`.
+- Styling: Tailwind CSS v4 dengan utility-first approach.
+- Jangan membuat atau menggunakan `tailwind.config.ts` kecuali benar-benar diperlukan.
+- Gunakan konfigurasi tema Tailwind v4 melalui `app/globals.css` dengan `@theme`.
+- Icons: gunakan Lucide React (`lucide-react`).
+- Hindari penggunaan emoji sebagai pengganti icon UI.
+- Tipografi utama: Plus Jakarta Sans.
+- H1: 36–44px, font-bold/extrabold.
+- H2: 24–28px, font-bold.
+- Body: 14–16px.
+- Gunakan hierarchy typography yang jelas.
+
+## 2. Token Warna & Visual Style
+- Primary: `#0d9488`
+- Primary hover: `#0f766e`
+- Primary light: `#f0fdfa`
+- Background canvas: `#f8f9ff`
+- Card: `#ffffff`
+- Card border: `slate-200/70`
+- Card shadow: `shadow-sm`
+- Container/card besar: `rounded-2xl`
+- Card kecil dan button: `rounded-lg` atau `rounded-xl`
+
+Gunakan warna primary secara konsisten untuk:
+- CTA
+- Button utama
+- Link aktif
+- Icon penting
+- Highlight
+- Status/interaksi yang relevan
+
+Hindari:
+- Warna yang terlalu banyak.
+- Gradient berlebihan.
+- Efek glassmorphism yang berlebihan.
+- Background putih polos di seluruh halaman.
+- Desain yang terlihat norak atau terlalu ramai.
+
+## 3. Prinsip UI/UX
+- Desain harus modern, clean, profesional, dan responsive.
+- Prioritaskan readability dan visual hierarchy.
+- Mobile-first.
+- Pastikan tampilan optimal pada mobile, tablet, dan desktop.
+- Gunakan spacing yang konsisten.
+- Jangan membuat layout terlalu padat.
+- Gunakan hover, transition, dan micro-interaction secara subtle.
+- Semua interactive element harus memiliki feedback visual.
+- Button harus memiliki state hover dan disabled jika diperlukan.
+- Gunakan semantic HTML jika memungkinkan.
+- Jangan membuat komponen terlalu besar; pecah menjadi komponen reusable.
+
+## 4. Struktur Komponen Beranda Publik
+
+### Header / Navbar
+- Logo/nama RuangKerja di sebelah kiri.
+- Navigasi utama di tengah atau kanan.
+- CTA `Masuk` dan `Daftar`.
+- Responsive navigation untuk mobile.
+- Navbar harus terlihat clean dan tidak terlalu tinggi.
+
+### Hero Section
+Gunakan layout 2 kolom pada desktop:
+- Kolom kiri:
+  - Badge/keterangan kecil.
+  - Headline utama.
+  - Deskripsi singkat.
+  - CTA utama.
+  - CTA sekunder jika diperlukan.
+- Kolom kanan:
+  - Widget interaktif `Quick Hub Explorer`.
+  - Tampilkan pilihan ruang/workstation secara visual.
+  - Gunakan card dengan informasi yang jelas.
+
+Pada mobile, ubah menjadi satu kolom.
+
+### Section Alur Reservasi
+Buat section berisi 4 langkah:
+1. Pilih Ruang
+2. Pilih Tanggal & Waktu
+3. Lakukan Reservasi
+4. Nikmati Ruang Kerja
+
+Tambahkan Banner Tiket Simulasi setelah bagian langkah.
+
+### Section Tipe Space
+Tampilkan 3 tipe ruang:
+1. Personal Desk
+2. Private Office
+3. Meeting Room
+
+Setiap card dapat memiliki:
+- Icon/image
+- Nama ruang
+- Deskripsi
+- Kapasitas
+- Harga
+- CTA
+
+### Section Kenapa Memilih RuangKerja
+Tampilkan beberapa keunggulan seperti:
+- Lokasi strategis
+- Internet cepat
+- Ruang nyaman
+- Fasilitas lengkap
+- Sistem reservasi online
+- Keamanan
+
+### Section Fasilitas
+Gunakan grid/card yang menampilkan fasilitas unggulan.
+
+Contoh:
+- High Speed WiFi
+- Meeting Room
+- Air Conditioning
+- Power Outlet
+- Pantry
+- Printing
+- Lounge
+- Parking
+
+### Section FAQ
+Gunakan accordion untuk pertanyaan umum.
+
+Contoh:
+- Bagaimana cara melakukan reservasi?
+- Apakah bisa membatalkan reservasi?
+- Bagaimana metode pembayarannya?
+- Apakah tersedia ruang meeting?
+- Apakah bisa melakukan reservasi untuk beberapa hari?
+
+### Bottom CTA
+Gunakan background teal gelap.
+
+Isi:
+- Headline singkat.
+- Deskripsi.
+- CTA utama untuk melakukan reservasi.
+
+### Footer
+Footer harus berisi:
+- Logo/nama RuangKerja.
+- Deskripsi singkat.
+- Navigasi.
+- Kontak.
+- Social media.
+- Copyright.
+
+## 5. Component Rules
+- Prioritaskan reusable components.
+- Gunakan props untuk data yang berulang.
+- Jangan hardcode card yang memiliki struktur sama berkali-kali.
+- Gunakan array/object untuk data list.
+- Gunakan `.map()` untuk rendering list.
+- Gunakan TypeScript types/interfaces jika diperlukan.
+- Gunakan `lucide-react` untuk icon.
+- Hindari inline SVG manual jika icon tersedia di Lucide.
+
+## 6. Responsive Rules
+### Mobile
+- Satu kolom.
+- Navigation menjadi mobile menu.
+- Card dapat menjadi full width.
+- Kurangi padding horizontal.
+- Typography harus tetap nyaman dibaca.
+
+### Tablet
+- Gunakan 2 kolom jika ruang memungkinkan.
+- Pertahankan spacing yang cukup.
+
+### Desktop
+- Gunakan max-width container.
+- Manfaatkan whitespace.
+- Hero dapat menggunakan 2 kolom.
+- Card grid dapat menggunakan 3 atau 4 kolom.
+
+## 7. Code Quality
+- Gunakan TypeScript.
+- Hindari `any` jika tidak diperlukan.
+- Jangan menghapus functionality yang sudah ada tanpa alasan.
+- Jangan mengubah konfigurasi project yang tidak berhubungan dengan task.
+- Jangan menginstal dependency baru jika dependency yang tersedia sudah cukup.
+- Pastikan tidak ada error TypeScript atau lint.
+- Setelah perubahan besar, pastikan aplikasi dapat dijalankan dengan benar.
+
+## 8. Design Direction
+Target visual:
+- Modern
+- Minimal
+- Professional
+- Clean
+- Premium
+- Friendly
+- Tech-oriented
+
+Inspirasi visual dapat mengambil pola UI modern seperti platform coworking, SaaS, booking platform, dan marketplace, tetapi jangan menyalin desain secara langsung.
+
+Prioritaskan:
+- Clear hierarchy
+- Consistent spacing
+- Strong CTA
+- Clean cards
+- Subtle animations
+- Good responsive behavior
+- Accessible contrast
+
+## 9. Authentication Pages — Member
+
+### Scope
+- Halaman authentication hanya untuk Member / Pengunjung RuangKerja.
+- Jangan menampilkan tab, switcher, dropdown, atau pilihan role Admin/Pengelola.
+- Portal Admin/Pengelola ditangani secara terpisah.
+
+### Login Page
+Route:
+- `/login`
+
+Gunakan:
+- Background: `#f8f9ff`
+- Card: `bg-white`
+- Card border: `border-slate-200/70`
+- Card shadow: `shadow-sm`
+- Card radius: `rounded-2xl`
+- Max width: `max-w-md`
+
+Isi:
+- Logo RuangKerja di bagian atas.
+- Heading: `Masuk ke RuangKerja`
+- Subheading yang menjelaskan login digunakan untuk memesan space dan melihat tiket.
+- Username / Email.
+- Password.
+- Toggle show/hide password menggunakan `Eye` dan `EyeOff` dari `lucide-react`.
+- Checkbox "Ingat saya di perangkat ini".
+- Link "Lupa kata sandi?"
+- Primary CTA: `Masuk ke Akun Member`.
+- Link menuju `/register`.
+- Security information secara subtle di bawah card.
+
+### Register Page
+Route:
+- `/register`
+
+Gunakan:
+- Background: `#f8f9ff`
+- Card: `bg-white`
+- Card border: `border-slate-200/70`
+- Card shadow: `shadow-sm`
+- Card radius: `rounded-2xl`
+- Desktop menggunakan grid 2 kolom.
+- Mobile menggunakan 1 kolom.
+
+Field:
+- Foto profil (opsional).
+- Nama lengkap.
+- Instansi / perusahaan (opsional).
+- Nomor WhatsApp / handphone.
+- Kota / domisili.
+- Username.
+- Email.
+- Password.
+- Konfirmasi password.
+- Persetujuan Syarat & Ketentuan serta Kebijakan Privasi.
+
+Gunakan icon dari `lucide-react` seperti:
+- `User`
+- `Mail`
+- `Phone`
+- `Lock`
+- `Eye`
+- `EyeOff`
+- `Building`
+- `Check`
+
+### Authentication UX
+- Gunakan React state untuk form interaction.
+- Tampilkan loading state ketika submit.
+- Tombol submit harus memiliki disabled state ketika loading.
+- Tampilkan validasi error dengan jelas.
+- Password dan konfirmasi password harus divalidasi.
+- Error input menggunakan border merah secara subtle.
+- Gunakan transition dan micro-interaction yang ringan.
+- Jangan menggunakan animasi berlebihan.
+- Jangan menggunakan emoji sebagai icon.
+- Tetap gunakan visual style RuangKerja yang sama dengan Landing Page.
+
+### Authentication Components
+Jika form mulai terlalu besar, pecah menjadi reusable components di:
+
+`components/auth/`
+
+Contoh:
+- `AuthLogo.tsx`
+- `PasswordInput.tsx`
+- `AuthInput.tsx`
+- `LoginForm.tsx`
+- `RegisterForm.tsx`
+
+Gunakan props dan TypeScript untuk komponen yang reusable.
+
+### API Integration
+- Jangan membuat endpoint API palsu jika dokumentasi API sudah tersedia.
+- Gunakan environment variable:
+
+`NEXT_PUBLIC_API_URL`
+
+- Pisahkan UI/form logic dari API request logic jika memungkinkan.
+- Jangan menyimpan credential/password di localStorage.
+- Jika authentication backend menggunakan cookie/session, ikuti mekanisme tersebut.
+- Jangan mengubah konfigurasi backend/API yang tidak berhubungan dengan task.
