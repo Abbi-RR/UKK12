@@ -112,8 +112,13 @@ export async function checkDiscount(namaDiskon: string) {
   return publicRequest("/api/diskon/check", "POST", { nama_diskon: namaDiskon });
 }
 
-export async function getMyReservations() {
-  return memberRequest("/api/reservasi/my");
+export async function getMyReservations(status?: string) {
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  return memberRequest(`/api/reservasi/my${query}`);
+}
+
+export async function getMemberProfile() {
+  return memberRequest("/api/auth/profile");
 }
 
 export async function getMyReservationHistory(month?: number, year?: number) {

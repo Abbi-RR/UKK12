@@ -42,6 +42,22 @@ function getNetworkError(controller: AbortController, error: unknown) {
   );
 }
 
+function createApiHeaders(appKey: string, accessToken?: string, hasBody = false) {
+  const headers: Record<string, string> = {
+    "x-maker-key": appKey,
+  };
+
+  if (hasBody) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  if (accessToken) {
+    headers.Authorization = `Bearer ${accessToken}`;
+  }
+
+  return headers;
+}
+
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -63,10 +79,7 @@ export async function requestCoworkingApi(
   try {
     response = await fetch(`${apiUrl.replace(/\/$/, "")}${endpoint}`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-maker-key": appKey,
-      },
+      headers: createApiHeaders(appKey, undefined, true),
       body: JSON.stringify(body),
       cache: "no-store",
       signal: controller.signal,
@@ -109,10 +122,7 @@ export async function requestCoworkingProfile(
   try {
     response = await fetch(`${apiUrl.replace(/\/$/, "")}/api/auth/profile`, {
       method: "GET",
-      headers: {
-        "x-maker-key": appKey,
-        Authorization: `Bearer ${accessToken}`,
-      },
+      headers: createApiHeaders(appKey, accessToken),
       cache: "no-store",
       signal: controller.signal,
     });
@@ -151,17 +161,7 @@ export async function requestCoworkingApiRequest(
     throw new CoworkingApiError("CONFIG", "API configuration is incomplete.");
   }
 
-  const headers: Record<string, string> = {
-    "x-maker-key": appKey,
-  };
-
-  if (body !== undefined) {
-    headers["Content-Type"] = "application/json";
-  }
-
-  if (accessToken) {
-    headers.Authorization = `Bearer ${accessToken}`;
-  }
+  const headers = createApiHeaders(appKey, accessToken, body !== undefined);
 
   const { controller, timeout } = createApiController();
   let response: Response;

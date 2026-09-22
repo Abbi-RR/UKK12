@@ -38,6 +38,14 @@ export async function getAdminProfile() {
   return adminRequest("/api/admin/profile");
 }
 
+export async function updateAdminProfile(body: {
+  nama_coworking: string;
+  nama_pemilik: string;
+  telp: string;
+}) {
+  return adminRequest("/api/admin/profile", "PUT", body);
+}
+
 export async function getMonthlyReport(month: number, year: number) {
   return adminRequest(`/api/admin/reports/monthly?month=${month}&year=${year}`);
 }
@@ -50,7 +58,10 @@ export async function getIncomeReport(month: number, year: number) {
   return adminRequest(`/api/admin/reports/income?month=${month}&year=${year}`);
 }
 
-export async function updateReservationStatus(id: number, status: string) {
+export async function updateReservationStatus(
+  id: number,
+  status: "menunggu" | "disetujui" | "dibatalkan",
+) {
   return adminRequest(`/api/admin/reservasi/${id}/status`, "PATCH", { status });
 }
 

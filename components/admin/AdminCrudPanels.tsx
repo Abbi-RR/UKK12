@@ -173,10 +173,11 @@ export default function AdminCrudPanels() {
     else setError(apiMessage(discountResult, "Diskon tidak dapat dimuat."));
     setLoading(false);
   }
-  // Initial data load synchronizes the management panel with the API.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
-    void refresh();
+    const timer = window.setTimeout(() => {
+      void refresh();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
   async function remove(item: { id: number; label: string }, kind: CrudTab) {
     if (!window.confirm(`Hapus ${item.label}?`)) return;
@@ -307,7 +308,6 @@ export default function AdminCrudPanels() {
             setNotice(message);
             await refresh();
           }}
-          onError={setError}
           setSaving={setSaving}
         />
       )}
@@ -565,13 +565,11 @@ function CrudModal({
   mode,
   onClose,
   onSaved,
-  onError: _onError,
   setSaving,
 }: {
   mode: Exclude<FormMode, null>;
   onClose: () => void;
   onSaved: (message: string) => Promise<void>;
-  onError: (message: string) => void;
   setSaving: (value: boolean) => void;
 }) {
   const [loading, setLoading] = useState(Boolean(mode.id));

@@ -1,28 +1,31 @@
 "use client";
+/* eslint-disable @next/next/no-img-element */
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   AlertCircle,
   ArrowRight,
-  Bell,
   Building2,
   CalendarDays,
   Check,
   Clock3,
   Coffee,
+  Eye,
   Home,
   Info,
   Laptop,
   LoaderCircle,
+  LogOut,
   MapPin,
   Menu,
   Monitor,
-  QrCode,
   Search,
   ShieldCheck,
   Sparkles,
+  Ticket,
   Users,
   X,
 } from "lucide-react";
@@ -34,6 +37,8 @@ import {
   getAvailability,
   getMyReservationHistory,
   getMyReservations,
+  getReservation,
+  getReservationTicket,
   getSpace,
   getSpaceTypes,
   getSpaces,
@@ -77,12 +82,13 @@ type Reservation = {
   total: number;
   status: string;
 };
+type TicketData = Reservation & { qrValue?: string; coworkingName?: string; memberName?: string };
+type ReservationStatusFilter = "" | "belum_dikonfirm" | "disetujui" | "aktif" | "selesai" | "dibatalkan";
 
 const navItems = [
   "Ketersediaan Space",
   "Reservasi Saya",
   "Riwayat & Tiket",
-  "Bantuan",
 ];
 const typeLabels: Record<SpaceTypeValue, string> = {
   desk: "Personal Desk",
@@ -115,13 +121,32 @@ function toStringValue(value: unknown) {
       ? String(value)
       : undefined;
 }
+function findNestedValue(value: unknown, keys: string[], depth = 0): unknown {
+  if (!isRecord(value) || depth > 4) return undefined;
+  for (const key of keys) if (value[key] !== undefined && value[key] !== null) return value[key];
+  for (const nested of Object.values(value)) {
+    const found = findNestedValue(nested, keys, depth + 1);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+function nestedString(value: unknown, keys: string[]) {
+  return toStringValue(findNestedValue(value, keys));
+}
+function nestedNumber(value: unknown, keys: string[]) {
+  return toNumber(findNestedValue(value, keys));
+}
 function getList(payload: ApiRecord): unknown[] {
   for (const candidate of [
     payload.data,
     payload.spaces,
     payload.reservations,
+    payload.reservasi,
     payload.discounts,
     payload.types,
+    payload.items,
+    payload.results,
+    payload.rows,
   ]) {
     if (Array.isArray(candidate)) return candidate;
     if (isRecord(candidate))
@@ -130,14 +155,21 @@ function getList(payload: ApiRecord): unknown[] {
         "data",
         "spaces",
         "reservations",
+        "reservasi",
+        "reservation",
         "discounts",
         "types",
+        "results",
         "rows",
       ])
         if (Array.isArray(candidate[key])) return candidate[key];
   }
   if (isRecord(payload.data) && payload.data.id !== undefined)
     return [payload.data];
+  if (isRecord(payload.data)) {
+    for (const key of ["reservasi", "reservation", "result", "booking"])
+      if (isRecord(payload.data[key])) return [payload.data[key]];
+  }
   return [];
 }
 function getObject(payload: ApiRecord) {
@@ -193,7 +225,25 @@ function normalizeFacilities(value: unknown): string[] {
 function normalizeSpaces(payload: ApiRecord): Space[] {
   return getList(payload).flatMap((value) => {
     if (!isRecord(value)) return [];
-    const id = toNumber(value.id ?? value.id_space ?? value.space_id);
+    // The booking API expects the space primary key (`id_space`). Some catalog
+    // responses also include a generic `id` for the resource representation.
+    const nestedSpace = isRecord(value.space)
+      ? value.space
+      : isRecord(value.data)
+        ? value.data
+        : undefined;
+    const id = toNumber(
+      nestedSpace?.id_space ??
+        nestedSpace?.idSpace ??
+        nestedSpace?.space_id ??
+        nestedSpace?.spaceId ??
+        nestedSpace?.id ??
+        value.id_space ??
+        value.idSpace ??
+        value.space_id ??
+        value.spaceId ??
+        value.id,
+    );
     const type = normalizeType(
       value.tipe ?? value.type ?? value.jenis_space ?? value.kode_tipe,
     );
@@ -207,9 +257,10 @@ function normalizeSpaces(payload: ApiRecord): Space[] {
         typeLabel: typeLabels[type],
         name:
           toStringValue(value.nama_space) ??
+          toStringValue(nestedSpace?.nama_space) ??
           toStringValue(value.nama) ??
           toStringValue(value.name) ??
-          "Nama space tidak tersedia",
+                  "",
         price: toNumber(value.harga_per_jam ?? value.harga ?? value.price) ?? 0,
         capacity: toStringValue(value.kapasitas ?? value.capacity) ?? "—",
         description: toStringValue(value.deskripsi ?? value.description) ?? "",
@@ -252,43 +303,119 @@ function normalizeDiscounts(payload: ApiRecord): Discount[] {
       : [];
   });
 }
+function booleanValue(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "tersedia", "available", "yes", "ya"].includes(normalized)) return true;
+    if (["false", "0", "tidak tersedia", "unavailable", "tidak"].includes(normalized)) return false;
+  }
+  if (typeof value === "number" && (value === 0 || value === 1)) return value === 1;
+  return undefined;
+}
+function findAvailabilitySource(value: unknown, depth = 0): ApiRecord | undefined {
+  if (!isRecord(value) || depth > 3) return undefined;
+  const hasAvailabilityField = ["available", "tersedia", "is_available", "isAvailable"].some((key) => key in value);
+  if (hasAvailabilityField) return value;
+  for (const key of ["data", "ketersediaan", "availability", "result", "response"]) {
+    const nested = findAvailabilitySource(value[key], depth + 1);
+    if (nested) return nested;
+  }
+  return undefined;
+}
 function normalizeAvailability(payload: ApiRecord): Availability {
   const data = getObject(payload);
+  const availabilitySource = findAvailabilitySource(data) ?? data;
+  const explicitAvailability = booleanValue(
+    availabilitySource.available ??
+      availabilitySource.tersedia ??
+      availabilitySource.is_available ??
+      availabilitySource.isAvailable ??
+      (typeof availabilitySource.status === "string" ? availabilitySource.status : undefined),
+  );
+  const available = explicitAvailability ?? booleanValue(availabilitySource.status) ?? booleanValue(payload.status) ?? false;
   return {
-    available: data.available === true,
-    message: toStringValue(data.message),
-    pricePerHour: toNumber(data.harga_per_jam),
-    estimatedTotal: toNumber(data.estimasi_total),
-    endTime: toStringValue(data.jam_selesai),
+    available,
+    message: toStringValue(availabilitySource.message) ?? toStringValue(availabilitySource.pesan) ?? toStringValue(data.message) ?? toStringValue(payload.message),
+    pricePerHour: toNumber(availabilitySource.harga_per_jam ?? availabilitySource.price_per_hour),
+    estimatedTotal: toNumber(availabilitySource.estimasi_total ?? availabilitySource.estimated_total),
+    endTime: toStringValue(availabilitySource.jam_selesai ?? availabilitySource.end_time),
   };
 }
 function normalizeReservations(payload: ApiRecord): Reservation[] {
   return getList(payload).flatMap((value) => {
     if (!isRecord(value)) return [];
-    const id = toNumber(value.id);
+    const source = isRecord(value.reservasi)
+      ? value.reservasi
+      : isRecord(value.reservation)
+        ? value.reservation
+        : isRecord(value.booking)
+          ? value.booking
+          : isRecord(value.data)
+            ? value.data
+            : value;
+    const id = toNumber(
+      source.id ??
+        source.id_reservasi ??
+        source.reservation_id ??
+        source.booking_id ??
+        value.id ??
+        value.id_reservasi,
+    );
     if (id === undefined) return [];
-    const nested = isRecord(value.space) ? value.space : undefined;
+    const nested = isRecord(source.space) ? source.space : undefined;
+    const payment = isRecord(source.pembayaran)
+      ? source.pembayaran
+      : isRecord(source.payment)
+        ? source.payment
+        : isRecord(source.detail_pembayaran)
+          ? source.detail_pembayaran
+          : undefined;
     return [
       {
         id,
         code:
-          toStringValue(value.kode_booking) ?? "Kode booking tidak tersedia",
+          nestedString(source, ["kode_booking", "kode_reservasi", "kode", "no_booking", "nomor_booking", "booking_code", "reservation_code"]) ??
+          "",
         spaceName:
-          toStringValue(value.nama_space) ??
+          toStringValue(source.nama_space) ??
+          toStringValue(source.space_name) ??
+          toStringValue(source.nama_ruangan) ??
           toStringValue(nested?.nama_space) ??
-          "Space tidak tersedia",
-        duration: toNumber(value.durasi_jam) ?? 0,
-        date: toStringValue(value.tanggal_reservasi) ?? "",
-        startTime: toStringValue(value.jam_mulai) ?? "",
-        endTime: toStringValue(value.jam_selesai) ?? "",
-        total: toNumber(value.total_bayar) ?? 0,
-        status: toStringValue(value.status) ?? "",
+          toStringValue(nested?.nama) ??
+          toStringValue(nested?.name) ??
+          "",
+        duration: toNumber(source.durasi_jam ?? source.duration) ?? 0,
+        date: toStringValue(source.tanggal_reservasi ?? source.tanggal ?? source.date) ?? "",
+        startTime: toStringValue(source.jam_mulai ?? source.jam ?? source.start_time) ?? "",
+        endTime: toStringValue(source.jam_selesai ?? source.end_time) ?? "",
+        total:
+          nestedNumber(source, [
+            "total_bayar",
+            "total_harga",
+            "harga_total",
+            "total_harga_sewa",
+            "total_pembayaran",
+            "jumlah_bayar",
+            "nominal",
+            "amount",
+            "total",
+          ]) ??
+          nestedNumber(payment, ["total_bayar", "total_harga", "nominal", "amount", "total"]) ??
+          0,
+        status: toStringValue(source.status ?? source.status_reservasi) ?? "",
       },
     ];
   });
 }
-function loadSpaceDetail(id: number) {
-  void id;
+function normalizeTicket(payload: ApiRecord, fallback: Reservation): TicketData {
+  const reservation = normalizeReservations(payload)[0] ?? fallback;
+  return {
+    ...reservation,
+    qrValue: nestedString(payload, ["qr_code", "qr_url", "qr_data", "qrcode", "barcode"]),
+    coworkingName: nestedString(payload, ["nama_coworking", "coworking_name", "nama_owner"]),
+    memberName: nestedString(payload, ["nama_member", "member_name"]),
+  };
 }
 function statusLabel(status: string) {
   return (
@@ -335,19 +462,16 @@ function SpaceCard({
   space,
   selected,
   onSelect,
-  onDetails,
 }: {
   space: Space;
   selected: boolean;
   onSelect: () => void;
-  onDetails: () => void;
 }) {
   const Icon = space.icon;
   const [detail, setDetail] = useState<Space | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [detailError, setDetailError] = useState("");
   async function showDetails() {
-    onDetails();
     setLoadingDetail(true);
     setDetailError("");
     const result = await getSpace(space.id);
@@ -552,16 +676,33 @@ function ReservationCard({
   onCancel: (id: number) => void;
   cancelling: boolean;
 }) {
-  const canCancel =
-    reservation.status !== "selesai" && reservation.status !== "dibatalkan";
+  const [panel, setPanel] = useState<"detail" | "ticket" | null>(null);
+  const [panelReservation, setPanelReservation] = useState<Reservation>(reservation);
+  const [ticket, setTicket] = useState<TicketData | null>(null);
+  const [panelLoading, setPanelLoading] = useState(false);
+  const [panelError, setPanelError] = useState("");
+  const canCancel = ["belum_dikonfirm", "disetujui"].includes(reservation.status);
+  async function openPanel(kind: "detail" | "ticket") {
+    setPanel(kind);
+    if (kind === "ticket") setTicket(null);
+    setPanelLoading(true);
+    setPanelError("");
+    const result = kind === "detail" ? await getReservation(reservation.id) : await getReservationTicket(reservation.id);
+    if (result.ok) {
+      const nextReservation = normalizeReservations(result.payload)[0] ?? reservation;
+      setPanelReservation(nextReservation);
+      if (kind === "ticket") setTicket(normalizeTicket(result.payload, nextReservation));
+    }
+    else setPanelError(messageFrom(result, kind === "detail" ? "Detail reservasi tidak dapat dimuat." : "E-ticket tidak dapat dimuat."));
+    setPanelLoading(false);
+  }
   return (
-    <article className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm">
+    <>
+      <article className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-bold text-slate-400">{reservation.code}</p>
-          <h3 className="mt-1 text-sm font-bold text-slate-900">
-            {reservation.spaceName}
-          </h3>
+          {reservation.code && <p className="text-xs font-bold text-slate-400">{reservation.code}</p>}
+          {reservation.spaceName && <h3 className="mt-1 text-sm font-bold text-slate-900">{reservation.spaceName}</h3>}
         </div>
         <span
           className={`rounded-full px-2 py-1 text-[10px] font-bold ${statusClass(reservation.status)}`}
@@ -582,26 +723,28 @@ function ReservationCard({
           </span>
         </div>
       </div>
-      {canCancel && (
-        <button
-          type="button"
-          onClick={() => onCancel(reservation.id)}
-          disabled={cancelling}
-          className="mt-3 text-xs font-bold text-red-600 hover:text-red-700 disabled:opacity-60"
-        >
-          {cancelling ? "Membatalkan..." : "Batalkan Reservasi"}
-        </button>
-      )}
-    </article>
+        <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+          <button type="button" onClick={() => void openPanel("detail")} disabled={panelLoading} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"><Eye className="h-3.5 w-3.5" />Detail</button>
+          <button type="button" onClick={() => void openPanel("ticket")} disabled={panelLoading} className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary-light px-2.5 py-1.5 text-xs font-bold text-primary-hover hover:bg-primary hover:text-white disabled:opacity-50"><Ticket className="h-3.5 w-3.5" />E-ticket</button>
+          {canCancel && <button type="button" onClick={() => onCancel(reservation.id)} disabled={cancelling} className="rounded-lg border border-red-100 px-2.5 py-1.5 text-xs font-bold text-red-600 hover:bg-red-50 disabled:opacity-60">{cancelling ? "Membatalkan..." : "Batalkan"}</button>}
+        </div>
+      </article>
+      {panel && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4" role="dialog" aria-modal="true" aria-label={panel === "detail" ? "Detail reservasi" : "E-ticket reservasi"}><article className={`w-full max-w-lg rounded-2xl border border-slate-200/80 bg-white p-6 shadow-lg ${panel === "ticket" ? "print:shadow-none" : ""}`}><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-wide text-primary">{panel === "detail" ? "Detail Reservasi" : "E-ticket RuangKerja"}</p><h2 className="mt-1 text-xl font-extrabold">{panelReservation.code}</h2></div><button type="button" onClick={() => setPanel(null)} aria-label="Tutup"><X className="h-5 w-5 text-slate-500" /></button></div>{panelLoading ? <p className="mt-6 text-sm text-slate-500">Memuat data dari API...</p> : panelError ? <p role="alert" className="mt-6 rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-700">{panelError}</p> : panel === "ticket" && ticket ? <div className="mt-6 rounded-xl border-2 border-dashed border-primary/30 p-5"><div className="text-center"><p className="text-sm font-extrabold text-primary">{ticket.coworkingName ?? "RuangKerja"}</p><p className="mt-1 text-xs text-slate-500">Bukti reservasi coworking space</p></div><div className="my-5 border-t border-dashed border-slate-200" /><div className="grid gap-3 text-sm sm:grid-cols-2"><InfoRow label="Kode booking" value={ticket.code} /><InfoRow label="Member" value={ticket.memberName ?? "Member"} /><InfoRow label="Space" value={ticket.spaceName} /><InfoRow label="Status" value={statusLabel(ticket.status)} /><InfoRow label="Tanggal" value={ticket.date} /><InfoRow label="Jadwal" value={`${ticket.startTime}${ticket.endTime ? ` - ${ticket.endTime}` : ""}`} /><InfoRow label="Durasi" value={`${ticket.duration} jam`} /><InfoRow label="Total" value={formatRupiah(ticket.total)} /></div>{ticket.qrValue && /^(data:image|https?:\/\/)/.test(ticket.qrValue) ? <div className="mt-5 text-center"><img src={ticket.qrValue} alt="QR code e-ticket" className="mx-auto h-32 w-32 object-contain" /><p className="mt-2 text-[11px] text-slate-500">Scan QR untuk detail reservasi</p></div> : <p className="mt-5 text-center text-xs text-slate-500">QR belum disediakan oleh response backend.</p>}</div> : <div className="mt-6 grid gap-3 text-sm sm:grid-cols-2"><InfoRow label="Space" value={panelReservation.spaceName} /><InfoRow label="Status" value={statusLabel(panelReservation.status)} /><InfoRow label="Tanggal" value={panelReservation.date} /><InfoRow label="Jadwal" value={`${panelReservation.startTime}${panelReservation.endTime ? ` - ${panelReservation.endTime}` : ""}`} /><InfoRow label="Durasi" value={`${panelReservation.duration} jam`} /><InfoRow label="Total" value={formatRupiah(panelReservation.total)} /></div>}<div className="mt-6 flex gap-2"><button type="button" onClick={() => setPanel(null)} className="flex-1 rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-50">Tutup</button>{panel === "ticket" && <button type="button" onClick={() => window.print()} className="flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-bold text-white hover:bg-primary-hover">Cetak E-ticket</button>}</div></article></div>}
+    </>
   );
 }
+function InfoRow({ label, value }: { label: string; value: string }) { if (!value) return null; return <div className="rounded-lg bg-slate-50 p-3"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 font-bold text-slate-800">{value}</p></div>; }
 
 export default function MemberBookingPage() {
+  const router = useRouter();
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [spaceTypes, setSpaceTypes] = useState<SpaceTypeOption[]>([]);
   const [discounts, setDiscounts] = useState<Discount[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [history, setHistory] = useState<Reservation[]>([]);
+  const [reservationStatus, setReservationStatus] = useState<ReservationStatusFilter>("");
+  const [historyMonth, setHistoryMonth] = useState(new Date().getMonth() + 1);
+  const [historyYear, setHistoryYear] = useState(new Date().getFullYear());
   const [activeType, setActiveType] = useState<SpaceTypeValue | "">("");
   const [search, setSearch] = useState("");
   const [selectedSpaceId, setSelectedSpaceId] = useState<number | null>(null);
@@ -688,11 +831,21 @@ export default function MemberBookingPage() {
       window.clearTimeout(timer);
     };
   }, [activeType, search]);
-  async function loadReservations() {
+  async function loadReservations(status = reservationStatus) {
     setLoadingAccount(true);
-    const result = await getMyReservations();
+    const result = await getMyReservations(status || undefined);
     if (result.ok) {
-      setReservations(normalizeReservations(result.payload));
+      const listedReservations = normalizeReservations(result.payload);
+      const hydratedReservations = await Promise.all(
+        listedReservations.map(async (reservation) => {
+          if (reservation.code && reservation.spaceName && reservation.total > 0) return reservation;
+          const detailResult = await getReservation(reservation.id);
+          return detailResult.ok
+            ? (normalizeReservations(detailResult.payload)[0] ?? reservation)
+            : reservation;
+        }),
+      );
+      setReservations(hydratedReservations);
       setAccountError("");
     } else
       setAccountError(
@@ -705,7 +858,7 @@ export default function MemberBookingPage() {
       void loadReservations();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [reservationStatus]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     let active = true;
     const timer = window.setTimeout(async () => {
@@ -781,7 +934,13 @@ export default function MemberBookingPage() {
         : {}),
     });
     if (result.ok) {
-      const reservation = normalizeReservations(result.payload)[0] ?? null;
+      const listedReservation = normalizeReservations(result.payload)[0] ?? null;
+      const detailResult = listedReservation
+        ? await getReservation(listedReservation.id)
+        : null;
+      const reservation = detailResult?.ok
+        ? (normalizeReservations(detailResult.payload)[0] ?? listedReservation)
+        : listedReservation;
       setCreatedReservation(reservation);
       setNotice(
         "Reservasi berhasil dibuat. Status mengikuti response backend.",
@@ -790,10 +949,10 @@ export default function MemberBookingPage() {
     } else setError(messageFrom(result, "Reservasi tidak dapat dibuat."));
     setSubmitting(false);
   }
-  async function loadHistory() {
+  async function loadHistoryFor(month = historyMonth, year = historyYear) {
     setShowHistory(true);
     setLoadingHistory(true);
-    const result = await getMyReservationHistory();
+    const result = await getMyReservationHistory(month, year);
     if (result.ok) setHistory(normalizeReservations(result.payload));
     else
       setAccountError(
@@ -801,6 +960,7 @@ export default function MemberBookingPage() {
       );
     setLoadingHistory(false);
   }
+  async function loadHistory() { await loadHistoryFor(); }
   async function handleCancel(id: number) {
     setCancellingId(id);
     const result = await cancelReservation(id);
@@ -809,6 +969,7 @@ export default function MemberBookingPage() {
       setAccountError(messageFrom(result, "Reservasi tidak dapat dibatalkan."));
     setCancellingId(null);
   }
+  async function logout() { await fetch("/api/auth/logout", { method: "POST" }); router.replace("/login"); }
 
   return (
     <div className="min-h-screen bg-background text-slate-900">
@@ -856,9 +1017,7 @@ export default function MemberBookingPage() {
                     ? "#availability"
                     : index === 1
                       ? "#reservations"
-                      : index === 2
-                        ? "#history"
-                        : "#help"
+                      : "#history"
                 }
                 onClick={
                   index === 2
@@ -875,26 +1034,14 @@ export default function MemberBookingPage() {
             ))}
           </nav>
           <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
-            <button
-              type="button"
-              aria-label="Notifikasi"
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500"
-            >
-              <Bell aria-hidden="true" className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              aria-label="Buka pemindai QR"
-              className="hidden h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-600 sm:flex"
-            >
-              <QrCode aria-hidden="true" className="h-4 w-4" /> Scan QR
-            </button>
             <span
               aria-label="Profil member"
               className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-white"
             >
               <Users aria-hidden="true" className="h-4 w-4" />
             </span>
+            <Link href="/member/profile" className="hidden text-xs font-bold text-slate-500 hover:text-primary sm:block">Profile</Link>
+            <button type="button" onClick={() => void logout()} className="hidden items-center gap-1 text-xs font-bold text-slate-500 hover:text-primary sm:flex"><LogOut className="h-3.5 w-3.5" />Logout</button>
             <button
               type="button"
               aria-label={mobileMenuOpen ? "Tutup menu" : "Buka menu"}
@@ -920,9 +1067,7 @@ export default function MemberBookingPage() {
                       ? "#availability"
                       : index === 1
                         ? "#reservations"
-                        : index === 2
-                          ? "#history"
-                          : "#help"
+                        : "#history"
                   }
                   onClick={(event) => {
                     setMobileMenuOpen(false);
@@ -1029,7 +1174,6 @@ export default function MemberBookingPage() {
                     space={space}
                     selected={space.id === selectedSpaceId}
                     onSelect={() => setSelectedSpaceId(space.id)}
-                    onDetails={() => void loadSpaceDetail(space.id)}
                   />
                 ))}
               </div>
@@ -1204,7 +1348,7 @@ export default function MemberBookingPage() {
                   {availability.message ??
                     (availability.available
                       ? "Space tersedia."
-                      : "Space tidak tersedia.")}
+                      : "Jadwal yang dipilih tidak tersedia.")}
                 </p>
               )}
               <div className="mt-5 border-t border-slate-100 pt-4">
@@ -1296,13 +1440,7 @@ export default function MemberBookingPage() {
                 Aktivitas & Reservasi Saya
               </h2>
             </div>
-            <button
-              type="button"
-              onClick={() => void loadReservations()}
-              className="text-xs font-bold text-primary"
-            >
-              Refresh data
-            </button>
+            <div className="flex items-center gap-2"><select value={reservationStatus} onChange={(event) => setReservationStatus(event.target.value as ReservationStatusFilter)} className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold"><option value="">Semua status</option><option value="belum_dikonfirm">Menunggu</option><option value="disetujui">Disetujui</option><option value="aktif">Aktif</option><option value="selesai">Selesai</option><option value="dibatalkan">Dibatalkan</option></select><button type="button" onClick={() => void loadReservations()} className="text-xs font-bold text-primary">Refresh</button></div>
           </div>
           {accountError && (
             <p
@@ -1377,13 +1515,7 @@ export default function MemberBookingPage() {
                 </p>
                 <h2 className="mt-1 text-2xl font-bold">Riwayat Reservasi</h2>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowHistory(false)}
-                className="text-xs font-bold text-slate-500"
-              >
-                Tutup
-              </button>
+              <div className="flex items-center gap-2"><select value={historyMonth} onChange={(event) => setHistoryMonth(Number(event.target.value))} className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold"><option value={1}>Januari</option><option value={2}>Februari</option><option value={3}>Maret</option><option value={4}>April</option><option value={5}>Mei</option><option value={6}>Juni</option><option value={7}>Juli</option><option value={8}>Agustus</option><option value={9}>September</option><option value={10}>Oktober</option><option value={11}>November</option><option value={12}>Desember</option></select><select value={historyYear} onChange={(event) => setHistoryYear(Number(event.target.value))} className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold"><option value={historyYear - 1}>{historyYear - 1}</option><option value={historyYear}>{historyYear}</option><option value={historyYear + 1}>{historyYear + 1}</option></select><button type="button" onClick={() => void loadHistory()} className="rounded-lg bg-primary px-2.5 py-2 text-xs font-bold text-white">Muat</button><button type="button" onClick={() => setShowHistory(false)} className="text-xs font-bold text-slate-500">Tutup</button></div>
             </div>
             {loadingHistory ? (
               <p className="mt-5 text-sm text-slate-500">
